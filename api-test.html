@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API测试</title>
+</head>
+<body>
+    <h1>智慧融媒体云平台 - API测试</h1>
+    
+    <div>
+        <h3>登录测试</h3>
+        <input type="email" id="email" placeholder="邮箱" value="admin@example.com">
+        <input type="password" id="password" placeholder="密码" value="123456">
+        <button onclick="testLogin()">测试登录</button>
+    </div>
+    
+    <div id="result" style="margin-top: 20px; padding: 10px; background: #f0f0f0;"></div>
+
+    <script>
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                resultDiv.innerHTML = '正在测试...';
+                
+                const response = await fetch('http://localhost:5001/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <h4 style="color: green;">✅ 登录成功!</h4>
+                        <p><strong>用户:</strong> ${data.data.user.username}</p>
+                        <p><strong>邮箱:</strong> ${data.data.user.email}</p>
+                        <p><strong>角色:</strong> ${data.data.user.role}</p>
+                        <p><strong>Token:</strong> ${data.data.token.substring(0, 50)}...</p>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<h4 style="color: red;">❌ 登录失败: ${data.message}</h4>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<h4 style="color: red;">❌ 网络错误: ${error.message}</h4>`;
+            }
+        }
+        
+        // 页面加载时自动测试连接
+        window.onload = async function() {
+            try {
+                const response = await fetch('http://localhost:5001/api/health');
+                const data = await response.json();
+                if (data.status === 'OK') {
+                    document.body.insertAdjacentHTML('afterbegin', 
+                        '<div style="background: green; color: white; padding: 10px; text-align: center;">✅ 后端连接正常</div>'
+                    );
+                }
+            } catch (error) {
+                document.body.insertAdjacentHTML('afterbegin', 
+                    '<div style="background: red; color: white; padding: 10px; text-align: center;">❌ 后端连接失败</div>'
+                );
+            }
+        };
+    </script>
+</body>
+</html>

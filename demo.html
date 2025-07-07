@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧融媒体云平台 - 演示版</title>
+    <link href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.0.0/dist/reset.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ant-design-vue@4.0.0/dist/antd.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/ant-design-vue@4.0.0/dist/reset.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .logo {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1890ff;
+            margin: 8px 0;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+        }
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .chart-card {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .chart-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #333;
+        }
+        .device-list {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        .device-header {
+            padding: 16px 24px;
+            background: #fafafa;
+            border-bottom: 1px solid #f0f0f0;
+            font-weight: 600;
+        }
+        .device-item {
+            padding: 16px 24px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .device-info h4 {
+            margin: 0 0 4px 0;
+            color: #333;
+        }
+        .device-info p {
+            margin: 0;
+            color: #666;
+            font-size: 12px;
+        }
+        .status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status.online {
+            background: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+        }
+        .status.offline {
+            background: #fff2f0;
+            color: #f5222d;
+            border: 1px solid #ffccc7;
+        }
+        @media (max-width: 768px) {
+            .charts {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 头部 -->
+        <div class="header">
+            <div class="logo">📺 智慧融媒体云平台</div>
+            <div>欢迎，管理员</div>
+        </div>
+
+        <!-- 主要内容 -->
+        <div class="container">
+            <!-- 统计卡片 -->
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value">156</div>
+                    <div class="stat-label">设备总数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">142</div>
+                    <div class="stat-label">在线设备</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">23</div>
+                    <div class="stat-label">活跃投放</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">45,672</div>
+                    <div class="stat-label">今日曝光</div>
+                </div>
+            </div>
+
+            <!-- 图表 -->
+            <div class="charts">
+                <div class="chart-card">
+                    <div class="chart-title">设备类型分布</div>
+                    <div id="deviceChart" style="height: 300px;"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">播放量趋势</div>
+                    <div id="trendChart" style="height: 300px;"></div>
+                </div>
+            </div>
+
+            <!-- 设备列表 -->
+            <div class="device-list">
+                <div class="device-header">最近设备状态</div>
+                <div class="device-item">
+                    <div class="device-info">
+                        <h4>商场主屏-1F</h4>
+                        <p>万达广场1楼大厅 | 1920x1080 | 2分钟前</p>
+                    </div>
+                    <span class="status online">在线</span>
+                </div>
+                <div class="device-item">
+                    <div class="device-info">
+                        <h4>户外LED-东门</h4>
+                        <p>市中心东门广场 | 1280x720 | 10分钟前</p>
+                    </div>
+                    <span class="status offline">离线</span>
+                </div>
+                <div class="device-item">
+                    <div class="device-info">
+                        <h4>地铁屏-站台A</h4>
+                        <p>地铁1号线A站台 | 1920x1080 | 1分钟前</p>
+                    </div>
+                    <span class="status online">在线</span>
+                </div>
+                <div class="device-item">
+                    <div class="device-info">
+                        <h4>电影院大屏</h4>
+                        <p>万达影城大厅 | 4K分辨率 | 30秒前</p>
+                    </div>
+                    <span class="status online">在线</span>
+                </div>
+                <div class="device-item">
+                    <div class="device-info">
+                        <h4>餐厅显示屏</h4>
+                        <p>麦当劳门店 | 1080P | 5分钟前</p>
+                    </div>
+                    <span class="status online">在线</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 设备类型分布图
+        const deviceChart = echarts.init(document.getElementById('deviceChart'));
+        const deviceOption = {
+            tooltip: { trigger: 'item' },
+            series: [{
+                type: 'pie',
+                radius: '60%',
+                data: [
+                    { value: 65, name: 'LED屏' },
+                    { value: 45, name: 'LCD显示器' },
+                    { value: 28, name: '投影仪' },
+                    { value: 18, name: '电视机' }
+                ],
+                emphasis: {
+                    itemStyle: {
+                        shadowBlur: 10,
+                        shadowOffsetX: 0,
+                        shadowColor: 'rgba(0, 0, 0, 0.5)'
+                    }
+                },
+                itemStyle: {
+                    color: function(params) {
+                        const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c'];
+                        return colors[params.dataIndex];
+                    }
+                }
+            }]
+        };
+        deviceChart.setOption(deviceOption);
+
+        // 播放量趋势图
+        const trendChart = echarts.init(document.getElementById('trendChart'));
+        const trendOption = {
+            tooltip: { trigger: 'axis' },
+            xAxis: {
+                type: 'category',
+                data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+            },
+            yAxis: { type: 'value' },
+            series: [{
+                data: [3200, 4100, 3800, 4500, 5200, 4800, 5600],
+                type: 'line',
+                smooth: true,
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(102, 126, 234, 0.6)' },
+                        { offset: 1, color: 'rgba(102, 126, 234, 0.1)' }
+                    ])
+                },
+                lineStyle: { color: '#667eea' },
+                itemStyle: { color: '#667eea' }
+            }]
+        };
+        trendChart.setOption(trendOption);
+
+        // 响应式处理
+        window.addEventListener('resize', function() {
+            deviceChart.resize();
+            trendChart.resize();
+        });
+
+        // 模拟实时数据更新
+        setInterval(() => {
+            const stats = document.querySelectorAll('.stat-value');
+            stats[3].textContent = (Math.floor(Math.random() * 1000) + 45000).toLocaleString();
+        }, 3000);
+    </script>
+</body>
+</html>
