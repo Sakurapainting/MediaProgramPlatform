@@ -216,8 +216,8 @@ async function endToEndTest() {
         console.log(`🎯 注册设备总数: ${statusResponse.data.devices.total}`);
         console.log(`🟢 在线设备数: ${statusResponse.data.devices.online}`);
         
-        // 4. 创建对应的设备记录
-        console.log('\n🤖 创建设备记录...');
+        // 4. 创建或查找对应的设备记录
+        console.log('\n🤖 创建或查找设备记录...');
         const deviceRecord = {
             deviceId: androidDevice.clientId,
             name: '端到端测试设备',
@@ -242,9 +242,46 @@ async function endToEndTest() {
             tags: ['test', 'mqtt', 'e2e', 'local-broker']
         };
         
-        const createResponse = await makeRequest('POST', '/api/devices', deviceRecord, authHeaders);
-        const device = createResponse.data.data;
-        console.log(`✅ 设备记录创建成功: ${device.deviceId} (ID: ${device._id})`);
+        let device;
+        try {
+            const createResponse = await makeRequest('POST', '/api/devices', deviceRecord, authHeaders);
+            device = createResponse.data.data;
+            console.log(`✅ 设备记录创建成功: ${device.deviceId} (ID: ${device._id})`);
+        } catch (error) {
+            if (error.response && error.response.status === 400 && 
+                error.response.data.error && error.response.data.error.includes('duplicate')) {
+                console.log(`⚠️ 设备ID已存在，查找现有设备...`);
+                
+                // 查找现有设备
+                const devicesResponse = await makeRequest('GET', '/api/devices', null, authHeaders);
+                const existingDevice = devicesResponse.data.data.devices.find(d => d.deviceId === androidDevice.clientId);
+                
+                if (existingDevice) {
+                    device = existingDevice;
+                    console.log(`✅ 找到现有设备: ${device.deviceId} (ID: ${device._id})`);
+                    
+                    // 更新设备状态
+                    try {
+                        const updateResponse = await makeRequest('PUT', `/api/devices/${device._id}`, {
+                            status: 'online',
+                            mqtt: {
+                                clientId: androidDevice.clientId,
+                                isConnected: true,
+                                lastConnectedAt: new Date()
+                            },
+                            lastHeartbeat: new Date()
+                        }, authHeaders);
+                        console.log(`✅ 设备状态更新成功`);
+                    } catch (updateError) {
+                        console.log(`⚠️ 设备状态更新失败:`, updateError.response?.data || updateError.message);
+                    }
+                } else {
+                    throw new Error('设备ID重复但无法找到现有设备');
+                }
+            } else {
+                throw error;
+            }
+        }
         
         // 5. 测试内容推送
         console.log('\n📺 测试内容推送...');
@@ -307,8 +344,28 @@ async function endToEndTest() {
         // 8. 清理测试数据
         console.log('\n🧹 清理测试数据...');
         androidDevice.client.end();
-        await makeRequest('DELETE', `/api/devices/${device._id}`, null, authHeaders);
-        console.log('✅ 测试设备记录已删除');
+        
+        // 只有当设备是在这次测试中创建的时候才删除
+        // 如果设备已经存在，只更新状态为离线
+        try {
+            if (device.tags && device.tags.includes('test')) {
+                await makeRequest('DELETE', `/api/devices/${device._id}`, null, authHeaders);
+                console.log('✅ 测试设备记录已删除');
+            } else {
+                await makeRequest('PUT', `/api/devices/${device._id}`, {
+                    status: 'offline',
+                    mqtt: {
+                        ...device.mqtt,
+                        isConnected: false,
+                        lastDisconnectedAt: new Date()
+                    }
+                }, authHeaders);
+                console.log('✅ 设备状态已更新为离线');
+            }
+        } catch (cleanupError) {
+            console.log('⚠️ 清理操作失败:', cleanupError.response?.data || cleanupError.message);
+        }
+        
         console.log('✅ MQTT客户端已断开');
         
         // 9. 测试结果总结

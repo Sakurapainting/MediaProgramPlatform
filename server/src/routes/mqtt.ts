@@ -371,4 +371,67 @@ router.post('/devices/:deviceId/screenshot', async (req, res) => {
   }
 });
 
+// 通用内容推送接口 (兼容测试脚本)
+router.post('/push', async (req, res) => {
+  try {
+    const { deviceIds, content } = req.body;
+
+    if (!deviceIds || !Array.isArray(deviceIds) || deviceIds.length === 0) {
+      return res.status(400).json({ error: '设备ID列表不能为空' });
+    }
+
+    if (!content || !content.contentId) {
+      return res.status(400).json({ error: '内容信息不完整' });
+    }
+
+    const mqttService: MQTTService = req.app.get('mqttService');
+    if (!mqttService) {
+      return res.status(500).json({ error: 'MQTT服务未启动' });
+    }
+
+    const pushMessage: ContentPushMessage = {
+      messageType: 'content',
+      content: {
+        id: content.contentId,
+        title: content.title || '无标题',
+        url: content.url || '',
+        type: content.type || 'image',
+        duration: content.duration || 10,
+        size: content.size || 0
+      }
+    };
+
+    const results = [];
+    for (const deviceId of deviceIds) {
+      try {
+        const success = await mqttService.pushContentToDevice(deviceId, pushMessage);
+        results.push({
+          deviceId: deviceId,
+          success: success,
+          message: success ? '推送成功' : '推送失败'
+        });
+      } catch (error) {
+        results.push({
+          deviceId: deviceId,
+          success: false,
+          message: `推送失败: ${error.message}`
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    
+    res.json({
+      success: successCount > 0,
+      message: `成功推送到 ${successCount}/${deviceIds.length} 个设备`,
+      results: results,
+      content: pushMessage.content
+    });
+
+  } catch (error) {
+    console.error('内容推送失败:', error);
+    res.status(500).json({ error: '内容推送失败', details: error.message });
+  }
+});
+
 export default router;

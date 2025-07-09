@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import Aedes from 'aedes';
 import { createServer, Server } from 'net';
+import { Device } from '../models/Device';
 
 // Content push message type
 export interface ContentPushMessage {
@@ -89,6 +90,16 @@ export default class MQTTService extends EventEmitter {
       if (client) {
         console.log(`📨 Message received from ${client.id}: ${packet.topic}`);
         
+        // Handle device registration
+        if (packet.topic === 'device/register') {
+          this.handleDeviceRegistration(client, packet);
+        }
+        
+        // Handle heartbeat
+        if (packet.topic === 'device/heartbeat') {
+          this.handleDeviceHeartbeat(client, packet);
+        }
+        
         // Update device last active time
         const device = this.connectedDevices.get(client.id);
         if (device) {
@@ -121,10 +132,13 @@ export default class MQTTService extends EventEmitter {
    */
   public async start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server.listen(this.port, () => {
+      this.server.listen(this.port, '0.0.0.0', () => {
         this.isRunning = true;
         console.log(`🚀 MQTT Server (Aedes) started successfully on port: ${this.port}`);
-        console.log(`📍 MQTT connection address: tcp://localhost:${this.port}`);
+        console.log(`📍 MQTT connection addresses:`);
+        console.log(`   - tcp://localhost:${this.port} (localhost)`);
+        console.log(`   - tcp://192.168.13.217:${this.port} (network access)`);
+        console.log(`   - tcp://0.0.0.0:${this.port} (all interfaces)`);
         console.log(`✅ Full MQTT functionality enabled - supports real device connections`);
         console.log(`📋 Supported topic patterns:`);
         console.log(`   - device/{deviceId}/register - Device registration`);
@@ -223,9 +237,17 @@ export default class MQTTService extends EventEmitter {
    */
   public async pushContentToDevice(deviceId: string, message: ContentPushMessage): Promise<boolean> {
     try {
-      const topic = `content/${deviceId}/push`;
-      await this.publishToDevice(deviceId, topic, message);
-      console.log(`📤 Content pushed to device ${deviceId}:`, message.content.title);
+      // Find the device to get the client ID
+      const device = await Device.findOne({ deviceId: deviceId });
+      if (!device || !device.mqtt?.clientId) {
+        console.error(`❌ Device not found or no MQTT client ID: ${deviceId}`);
+        return false;
+      }
+
+      const clientId = device.mqtt.clientId;
+      const topic = `device/${clientId}/content`;
+      await this.publishToDevice(clientId, topic, message);
+      console.log(`📤 Content pushed to device ${deviceId} (client: ${clientId}):`, message.content.title);
       return true;
     } catch (error) {
       console.error(`❌ Content push failed:`, error);
@@ -238,9 +260,17 @@ export default class MQTTService extends EventEmitter {
    */
   public async sendCommandToDevice(deviceId: string, command: any): Promise<boolean> {
     try {
-      const topic = `command/${deviceId}/send`;
-      await this.publishToDevice(deviceId, topic, command);
-      console.log(`📤 Command sent to device ${deviceId}:`, command);
+      // Find the device to get the client ID
+      const device = await Device.findOne({ deviceId: deviceId });
+      if (!device || !device.mqtt?.clientId) {
+        console.error(`❌ Device not found or no MQTT client ID: ${deviceId}`);
+        return false;
+      }
+
+      const clientId = device.mqtt.clientId;
+      const topic = `device/${clientId}/command`;
+      await this.publishToDevice(clientId, topic, command);
+      console.log(`📤 Command sent to device ${deviceId} (client: ${clientId}):`, command);
       return true;
     } catch (error) {
       console.error(`❌ Command send failed:`, error);
@@ -286,5 +316,146 @@ export default class MQTTService extends EventEmitter {
    */
   public isAlive(): boolean {
     return this.isRunning;
+  }
+
+  /**
+   * Handle device registration
+   */
+  private async handleDeviceRegistration(client: any, packet: any): Promise<void> {
+    try {
+      const payload = JSON.parse(packet.payload.toString());
+      console.log(`📋 Processing device registration from ${client.id}:`, payload);
+      
+      const deviceId = payload.deviceId || client.id;
+      const deviceType = payload.data?.type || payload.deviceType || 'android_screen';
+      const deviceData = payload.data || {};
+      const metadata = payload.metadata || {};
+      
+      // Check if device already exists
+      let device = await Device.findOne({ deviceId: deviceId });
+      
+      if (!device) {
+        // Create new device record
+        device = new Device({
+          deviceId: deviceId,
+          name: deviceData.name || `${deviceType}_${deviceId}`,
+          type: deviceType,
+          location: {
+            name: deviceData.location?.name || metadata.location || '未知位置',
+            address: deviceData.location?.address || metadata.address || '未知地址',
+            coordinates: deviceData.location?.coordinates || metadata.coordinates || { latitude: 0, longitude: 0 },
+            region: deviceData.location?.region || metadata.region || '未知区域',
+            city: deviceData.location?.city || metadata.city || '未知城市'
+          },
+          specifications: {
+            resolution: deviceData.specifications?.resolution || metadata.resolution || '1920x1080',
+            size: deviceData.specifications?.size || metadata.size || '未知尺寸',
+            orientation: deviceData.specifications?.orientation || metadata.orientation || 'horizontal'
+          },
+          mqtt: {
+            clientId: client.id,
+            isConnected: true,
+            lastConnectedAt: new Date(),
+            subscriptions: [],
+            messageCount: 0
+          },
+          tags: deviceData.capabilities || ['auto-registered', 'mqtt-device'],
+          status: 'online',
+          isActive: true,
+          lastHeartbeat: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+        
+        await device.save();
+        console.log(`✅ Auto-registered new device: ${deviceId}`);
+      } else {
+        // Update existing device
+        if (!device.mqtt) {
+          device.mqtt = {
+            clientId: client.id,
+            isConnected: true,
+            subscriptions: [],
+            messageCount: 0
+          };
+        } else {
+          device.mqtt.clientId = client.id;
+          device.mqtt.isConnected = true;
+        }
+        device.lastHeartbeat = new Date();
+        device.updatedAt = new Date();
+        
+        await device.save();
+        console.log(`🔄 Updated existing device: ${deviceId}`);
+      }
+      
+      // Send registration confirmation
+      const confirmationTopic = `device/${client.id}/register/confirm`;
+      const confirmation = {
+        status: 'success',
+        deviceId: deviceId,
+        message: '设备注册成功',
+        timestamp: new Date().toISOString()
+      };
+      
+      await this.publishToDevice(client.id, confirmationTopic, confirmation);
+      
+    } catch (error) {
+      console.error(`❌ Device registration failed for ${client.id}:`, error);
+      
+      // Send error response
+      try {
+        const errorTopic = `device/${client.id}/register/error`;
+        const errorResponse = {
+          status: 'error',
+          message: '设备注册失败',
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: new Date().toISOString()
+        };
+        await this.publishToDevice(client.id, errorTopic, errorResponse);
+      } catch (sendError) {
+        console.error(`❌ Failed to send error response:`, sendError);
+      }
+    }
+  }
+
+  /**
+   * Handle device heartbeat
+   */
+  private async handleDeviceHeartbeat(client: any, packet: any): Promise<void> {
+    try {
+      const payload = JSON.parse(packet.payload.toString());
+      const deviceId = payload.deviceId || client.id;
+      
+      console.log(`💓 Heartbeat received from device: ${deviceId}`);
+      
+      // Update device heartbeat in database
+      const device = await Device.findOne({ deviceId: deviceId });
+      if (device) {
+        device.lastHeartbeat = new Date();
+        if (!device.mqtt) {
+          device.mqtt = {
+            clientId: client.id,
+            isConnected: true,
+            subscriptions: [],
+            messageCount: 0
+          };
+        } else {
+          device.mqtt.isConnected = true;
+        }
+        device.updatedAt = new Date();
+        await device.save();
+      }
+      
+      // Update in-memory device list
+      const connectedDevice = this.connectedDevices.get(client.id);
+      if (connectedDevice) {
+        connectedDevice.lastSeen = new Date();
+        this.connectedDevices.set(client.id, connectedDevice);
+      }
+      
+    } catch (error) {
+      console.error(`❌ Heartbeat processing failed for ${client.id}:`, error);
+    }
   }
 }
