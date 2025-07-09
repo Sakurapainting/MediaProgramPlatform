@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IDevice extends Document {
   deviceId: string;
   name: string;
-  type: 'led_screen' | 'lcd_display' | 'projector' | 'tv' | 'mobile_app';
+  type: 'led_screen' | 'lcd_display' | 'projector' | 'tv' | 'mobile_app' | 'android_screen';
   location: {
     name: string;
     address: string;
@@ -27,6 +27,15 @@ export interface IDevice extends Document {
     contentId?: mongoose.Types.ObjectId;
     playingAt?: Date;
   };
+  mqtt?: {
+    clientId: string;
+    isConnected: boolean;
+    lastConnectedAt?: Date;
+    lastDisconnectedAt?: Date;
+    subscriptions: string[];
+    messageCount: number;
+    lastMessage?: string;
+  };
   tags: string[];
   createdAt: Date;
   updatedAt: Date;
@@ -46,7 +55,7 @@ const deviceSchema = new Schema<IDevice>({
   },
   type: {
     type: String,
-    enum: ['led_screen', 'lcd_display', 'projector', 'tv', 'mobile_app'],
+    enum: ['led_screen', 'lcd_display', 'projector', 'tv', 'mobile_app', 'android_screen'],
     required: true
   },
   location: {
@@ -85,6 +94,15 @@ const deviceSchema = new Schema<IDevice>({
     contentId: { type: Schema.Types.ObjectId, ref: 'Content' },
     playingAt: Date
   },
+  mqtt: {
+    clientId: { type: String, sparse: true },
+    isConnected: { type: Boolean, default: false },
+    lastConnectedAt: Date,
+    lastDisconnectedAt: Date,
+    subscriptions: [{ type: String }],
+    messageCount: { type: Number, default: 0 },
+    lastMessage: String
+  },
   tags: [{
     type: String,
     trim: true
@@ -93,9 +111,11 @@ const deviceSchema = new Schema<IDevice>({
   timestamps: true
 });
 
-// Index for location-based queries
-deviceSchema.index({ 'location.coordinates': '2dsphere' });
+// Index for queries
+// deviceSchema.index({ 'location.coordinates': '2dsphere' }); // 暂时禁用地理索引
 deviceSchema.index({ status: 1, isActive: 1 });
 deviceSchema.index({ type: 1, status: 1 });
+deviceSchema.index({ deviceId: 1 });
+deviceSchema.index({ 'mqtt.clientId': 1 });
 
 export const Device = mongoose.model<IDevice>('Device', deviceSchema);

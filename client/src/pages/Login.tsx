@@ -10,7 +10,6 @@ const Login: React.FC = () => {
   const onFinish = async (values: { email: string; password: string }) => {
     setLoading(true);
     try {
-      console.log('Attempting login with:', values.email);
       const success = await login(values.email, values.password);
       if (success) {
         message.success('登录成功');
@@ -18,7 +17,6 @@ const Login: React.FC = () => {
         message.error('登录失败，请检查邮箱和密码');
       }
     } catch (error) {
-      console.error('Login error:', error);
       message.error('登录失败，请稍后重试');
     } finally {
       setLoading(false);

@@ -1,0 +1,499 @@
+import * as mqtt from 'mqtt';
+import { Device } from '../models/Device';
+
+export interface MQTTMessage {
+  type: 'register' | 'heartbeat' | 'status' | 'content_response' | 'data';
+  deviceId: string;
+  clientId: string;
+  timestamp: number;
+  data: any;
+}
+
+export interface DeviceRegistration {
+  deviceId: string;
+  name: string;
+  type: 'android_screen';
+  location: {
+    name: string;
+    address: string;
+    coordinates: {
+      latitude: number;
+      longitude: number;
+    };
+  };
+  specifications: {
+    resolution: string;
+    size: string;
+    orientation: 'horizontal' | 'vertical';
+  };
+  version?: string;
+  capabilities?: string[];
+}
+
+export interface ContentPushMessage {
+  contentId: string;
+  campaignId?: string;
+  url: string;
+  type: 'image' | 'video' | 'text' | 'audio' | 'slideshow';
+  duration: number;
+  priority: number;
+  schedule?: {
+    startTime: string;
+    endTime: string;
+  };
+}
+
+class MQTTService {
+  private client: mqtt.MqttClient | null = null;
+  private brokerUrl: string;
+  private isConnected: boolean = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private connectedDevices: Map<string, any> = new Map();
+
+  constructor(brokerUrl: string = 'mqtt://broker.emqx.io:1883') {
+    this.brokerUrl = brokerUrl;
+  }
+
+  private async handleMessage(topic: string, message: Buffer) {
+    const messageStr = message.toString();
+    
+    if (topic.startsWith('$SYS/')) {
+      return;
+    }
+
+    try {
+      const mqttMessage: MQTTMessage = JSON.parse(messageStr);
+      
+      console.log(`[MQTT] 收到消息 - 主题: ${topic}, 类型: ${mqttMessage.type}, 设备: ${mqttMessage.deviceId}`);
+      
+      switch (mqttMessage.type) {
+        case 'register':
+          await this.handleDeviceRegistration(mqttMessage);
+          break;
+        case 'heartbeat':
+          await this.handleHeartbeat(mqttMessage);
+          break;
+        case 'status':
+          await this.handleStatusUpdate(mqttMessage);
+          break;
+        case 'data':
+          await this.handleDeviceData(mqttMessage);
+          break;
+        case 'content_response':
+          await this.handleContentResponse(mqttMessage);
+          break;
+        default:
+          console.log(`[MQTT] 未知消息类型: ${mqttMessage.type}`);
+      }
+    } catch (error) {
+      console.log(`[MQTT] 收到非JSON消息 主题 ${topic}: ${messageStr}`);
+    }
+  }
+
+  private async handleDeviceRegistration(message: MQTTMessage) {
+    try {
+      const registration: DeviceRegistration = message.data;
+      
+      let device = await Device.findOne({ deviceId: registration.deviceId });
+      
+      if (!device) {
+        // 创建新设备
+        device = new Device({
+          deviceId: registration.deviceId,
+          name: registration.name,
+          type: registration.type,
+          location: registration.location,
+          specifications: registration.specifications,
+          status: 'online',
+          lastHeartbeat: new Date(),
+          mqtt: {
+            clientId: message.clientId,
+            isConnected: true,
+            lastConnectedAt: new Date(),
+            subscriptions: [],
+            messageCount: 1,
+            lastMessage: JSON.stringify(message)
+          }
+        });
+        
+        await device.save();
+        console.log(`[MQTT] 新设备注册成功: ${device.deviceId}`);
+      } else {
+        // 更新现有设备
+        device.status = 'online';
+        device.lastHeartbeat = new Date();
+        device.mqtt = {
+          clientId: message.clientId,
+          isConnected: true,
+          lastConnectedAt: new Date(),
+          subscriptions: device.mqtt?.subscriptions || [],
+          messageCount: (device.mqtt?.messageCount || 0) + 1,
+          lastMessage: JSON.stringify(message)
+        };
+        
+        await device.save();
+        console.log(`[MQTT] 设备重新注册: ${device.deviceId}`);
+      }
+
+      // 记录连接的设备
+      this.connectedDevices.set(message.clientId, {
+        deviceId: registration.deviceId,
+        connectedAt: new Date(),
+        lastHeartbeat: new Date()
+      });
+
+      // 发送注册确认
+      const confirmTopic = `device/${message.clientId}/register_confirm`;
+      const confirmMessage = {
+        type: 'register_confirm',
+        timestamp: Date.now(),
+        status: 'success',
+        deviceId: registration.deviceId
+      };
+
+      this.publish(confirmTopic, JSON.stringify(confirmMessage));
+
+    } catch (error) {
+      console.error('[MQTT] 设备注册处理失败:', error);
+    }
+  }
+
+  private async handleHeartbeat(message: MQTTMessage) {
+    try {
+      const device = await Device.findOneAndUpdate(
+        { 'mqtt.clientId': message.clientId },
+        {
+          lastHeartbeat: new Date(),
+          status: 'online',
+          $inc: { 'mqtt.messageCount': 1 },
+          'mqtt.lastMessage': JSON.stringify(message)
+        },
+        { new: true }
+      );
+
+      if (device) {
+        // 更新本地设备信息
+        const deviceInfo = this.connectedDevices.get(message.clientId);
+        if (deviceInfo) {
+          deviceInfo.lastHeartbeat = new Date();
+        }
+
+        // 发送心跳响应
+        const responseTopic = `device/${message.clientId}/heartbeat_response`;
+        const response = {
+          type: 'heartbeat_response',
+          timestamp: Date.now(),
+          status: 'ok',
+          deviceStatus: device.status
+        };
+
+        this.publish(responseTopic, JSON.stringify(response));
+        console.log(`[MQTT] 心跳处理完成: ${device.deviceId}`);
+      }
+    } catch (error) {
+      console.error('[MQTT] 心跳处理失败:', error);
+    }
+  }
+
+  private async handleStatusUpdate(message: MQTTMessage) {
+    try {
+      const { status, error, currentContent, deviceInfo } = message.data;
+      
+      const updateData: any = {
+        status: status || 'online',
+        lastHeartbeat: new Date(),
+        'mqtt.lastMessage': JSON.stringify(message)
+      };
+
+      if (currentContent) {
+        updateData.currentContent = currentContent;
+      }
+
+      const device = await Device.findOneAndUpdate(
+        { 'mqtt.clientId': message.clientId },
+        updateData,
+        { new: true }
+      );
+
+      if (device) {
+        console.log(`[MQTT] 状态更新: ${device.deviceId} -> ${status}`);
+        
+        if (error) {
+          console.error(`[MQTT] 设备错误 ${device.deviceId}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('[MQTT] 状态更新处理失败:', error);
+    }
+  }
+
+  private async handleDeviceData(message: MQTTMessage) {
+    try {
+      const { dataType, payload } = message.data;
+      
+      await Device.findOneAndUpdate(
+        { 'mqtt.clientId': message.clientId },
+        {
+          'mqtt.lastMessage': JSON.stringify(message),
+          $inc: { 'mqtt.messageCount': 1 },
+          lastHeartbeat: new Date()
+        }
+      );
+
+      console.log(`[MQTT] 收到设备数据 - 类型: ${dataType}, 客户端: ${message.clientId}`);
+
+      switch (dataType) {
+        case 'sensor':
+          // 处理传感器数据
+          break;
+        case 'screenshot':
+          console.log(`[MQTT] 收到截图数据: ${payload.filename}`);
+          break;
+        case 'logs':
+          // 处理日志数据
+          break;
+        default:
+          console.log(`[MQTT] 未处理的数据类型: ${dataType}`);
+      }
+    } catch (error) {
+      console.error('[MQTT] 设备数据处理失败:', error);
+    }
+  }
+
+  private async handleContentResponse(message: MQTTMessage) {
+    try {
+      const { contentId, status, error } = message.data;
+      
+      await Device.findOneAndUpdate(
+        { 'mqtt.clientId': message.clientId },
+        {
+          'mqtt.lastMessage': JSON.stringify(message),
+          lastHeartbeat: new Date()
+        }
+      );
+      
+      console.log(`[MQTT] 内容响应: 客户端 ${message.clientId}, 内容 ${contentId}, 状态 ${status}`);
+      
+      if (error) {
+        console.error(`[MQTT] 内容处理错误:`, error);
+      }
+    } catch (error) {
+      console.error('[MQTT] 内容响应处理失败:', error);
+    }
+  }
+
+  // 推送内容到安卓终端
+  public async pushContentToDevice(deviceId: string, content: ContentPushMessage): Promise<boolean> {
+    try {
+      const device = await Device.findOne({ deviceId });
+      if (!device || !device.mqtt?.isConnected) {
+        console.log(`[MQTT] 设备 ${deviceId} 未连接`);
+        return false;
+      }
+
+      const topic = `device/${device.mqtt.clientId}/content`;
+      const message = {
+        type: 'content_push',
+        timestamp: Date.now(),
+        data: content
+      };
+
+      this.publish(topic, JSON.stringify(message));
+      console.log(`[MQTT] 内容推送成功: 设备 ${deviceId}`);
+      return true;
+    } catch (error) {
+      console.error('[MQTT] 内容推送失败:', error);
+      return false;
+    }
+  }
+
+  // 发送命令到安卓终端
+  public async sendCommandToDevice(deviceId: string, command: any): Promise<boolean> {
+    try {
+      const device = await Device.findOne({ deviceId });
+      if (!device || !device.mqtt?.isConnected) {
+        return false;
+      }
+
+      const topic = `device/${device.mqtt.clientId}/commands`;
+      const message = {
+        type: 'command',
+        timestamp: Date.now(),
+        data: command
+      };
+
+      this.publish(topic, JSON.stringify(message));
+      console.log(`[MQTT] 命令发送成功: 设备 ${deviceId}, 命令 ${command.command}`);
+      return true;
+    } catch (error) {
+      console.error('[MQTT] 命令发送失败:', error);
+      return false;
+    }
+  }
+
+  // 广播消息到所有安卓终端
+  public broadcastToAllDevices(message: any) {
+    const topic = 'broadcast/all';
+    const broadcastMessage = {
+      type: 'broadcast',
+      timestamp: Date.now(),
+      data: message
+    };
+    
+    this.publish(topic, JSON.stringify(broadcastMessage));
+    console.log('[MQTT] 广播消息发送');
+  }
+
+  private publish(topic: string, message: string) {
+    if (this.client && this.isConnected) {
+      this.client.publish(topic, message, { qos: 1 }, (error) => {
+        if (error) {
+          console.error(`[MQTT] 消息发布失败 - 主题: ${topic}, 错误:`, error);
+        } else {
+          console.log(`[MQTT] 消息发布成功 - 主题: ${topic}`);
+        }
+      });
+    } else {
+      console.warn(`[MQTT] 无法发布消息，客户端未连接 - 主题: ${topic}`);
+    }
+  }
+
+  public start() {
+    if (this.client) {
+      console.log('[MQTT] 客户端已存在，先断开连接');
+      this.stop();
+    }
+
+    console.log(`[MQTT] 连接到MQTT代理服务器: ${this.brokerUrl}`);
+    
+    // 创建MQTT客户端
+    this.client = mqtt.connect(this.brokerUrl, {
+      clientId: `media_platform_server_${Date.now()}`,
+      clean: true,
+      connectTimeout: 30000,
+      reconnectPeriod: 5000,
+      keepalive: 60
+    });
+
+    // 连接成功
+    this.client.on('connect', () => {
+      console.log('[MQTT] 已连接到MQTT代理服务器: broker.emqx.io');
+      this.isConnected = true;
+      
+      // 订阅主题
+      this.subscribeToTopics();
+    });
+
+    // 接收消息
+    this.client.on('message', (topic, message) => {
+      this.handleMessage(topic, message);
+    });
+
+    // 连接断开
+    this.client.on('close', () => {
+      console.log('[MQTT] 与MQTT代理服务器连接断开');
+      this.isConnected = false;
+      
+      // 更新所有设备状态为离线
+      this.updateAllDevicesOffline();
+    });
+
+    // 连接错误
+    this.client.on('error', (error) => {
+      console.error('[MQTT] MQTT客户端错误:', error);
+      this.isConnected = false;
+    });
+
+    // 重连
+    this.client.on('reconnect', () => {
+      console.log('[MQTT] 正在重连到MQTT代理服务器...');
+    });
+  }
+
+  private subscribeToTopics() {
+    if (!this.client || !this.isConnected) {
+      return;
+    }
+
+    // 订阅设备消息主题
+    const topics = [
+      'device/register',
+      'device/heartbeat', 
+      'device/status',
+      'device/data',
+      'device/content_response',
+      'device/+/register',
+      'device/+/heartbeat',
+      'device/+/status', 
+      'device/+/data',
+      'device/+/content_response'
+    ];
+
+    topics.forEach(topic => {
+      this.client!.subscribe(topic, { qos: 1 }, (error) => {
+        if (error) {
+          console.error(`[MQTT] 订阅主题失败: ${topic}`, error);
+        } else {
+          console.log(`[MQTT] 订阅主题成功: ${topic}`);
+        }
+      });
+    });
+  }
+
+  private async updateAllDevicesOffline() {
+    try {
+      await Device.updateMany(
+        { 'mqtt.isConnected': true },
+        { 
+          'mqtt.isConnected': false,
+          'mqtt.lastDisconnectedAt': new Date(),
+          status: 'offline'
+        }
+      );
+      
+      this.connectedDevices.clear();
+      console.log('[MQTT] 所有设备状态已更新为离线');
+    } catch (error) {
+      console.error('[MQTT] 更新设备离线状态失败:', error);
+    }
+  }
+
+  public stop() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.client) {
+      this.client.end();
+      this.client = null;
+    }
+    
+    this.isConnected = false;
+    console.log('[MQTT] MQTT客户端已停止');
+  }
+
+  public getConnectedDevices() {
+    return Array.from(this.connectedDevices.entries()).map(([clientId, info]) => ({
+      clientId,
+      deviceId: info.deviceId,
+      connectedAt: info.connectedAt,
+      lastHeartbeat: info.lastHeartbeat
+    }));
+  }
+
+  public getStats() {
+    return {
+      totalConnectedDevices: this.connectedDevices.size,
+      brokerConnected: this.isConnected,
+      brokerUrl: this.brokerUrl
+    };
+  }
+
+  public isClientConnected(): boolean {
+    return this.isConnected;
+  }
+}
+
+export default MQTTService;
+export { MQTTService };

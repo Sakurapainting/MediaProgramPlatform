@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MQTT安卓终端模拟器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            height: 300px;
+            overflow-y: scroll;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🤖 安卓屏幕终端 MQTT 模拟器</h1>
+    
+    <div class="container">
+        <h2>连接状态</h2>
+        <div id="status" class="status disconnected">未连接</div>
+        
+        <h3>连接配置</h3>
+        <div class="grid">
+            <div>
+                <label>服务器地址:</label>
+                <input type="text" id="serverUrl" value="ws://localhost:9001">
+                <small>注意: WebSocket端口与MQTT端口不同</small>
+            </div>
+            <div>
+                <label>客户端ID:</label>
+                <input type="text" id="clientId" value="">
+            </div>
+        </div>
+        
+        <button onclick="connect()">连接</button>
+        <button onclick="disconnect()">断开连接</button>
+    </div>
+
+    <div class="container">
+        <h2>设备注册</h2>
+        <div class="grid">
+            <div>
+                <label>设备ID:</label>
+                <input type="text" id="deviceId" value="android_001">
+                
+                <label>设备名称:</label>
+                <input type="text" id="deviceName" value="安卓屏幕终端_001">
+                
+                <label>位置名称:</label>
+                <input type="text" id="locationName" value="大厅显示屏">
+                
+                <label>位置地址:</label>
+                <input type="text" id="locationAddress" value="北京市朝阳区xxx大厦1层">
+            </div>
+            <div>
+                <label>分辨率:</label>
+                <input type="text" id="resolution" value="1920x1080">
+                
+                <label>尺寸:</label>
+                <input type="text" id="size" value="55寸">
+                
+                <label>方向:</label>
+                <select id="orientation">
+                    <option value="horizontal">横屏</option>
+                    <option value="vertical">竖屏</option>
+                </select>
+                
+                <label>经纬度:</label>
+                <input type="text" id="latitude" value="39.9042" placeholder="纬度">
+                <input type="text" id="longitude" value="116.4074" placeholder="经度">
+            </div>
+        </div>
+        <button onclick="registerDevice()">注册设备</button>
+    </div>
+
+    <div class="grid">
+        <div class="container">
+            <h2>消息发送</h2>
+            
+            <h3>心跳</h3>
+            <button onclick="sendHeartbeat()">发送心跳</button>
+            
+            <h3>状态更新</h3>
+            <select id="statusSelect">
+                <option value="online">在线</option>
+                <option value="offline">离线</option>
+                <option value="maintenance">维护中</option>
+                <option value="error">错误</option>
+            </select>
+            <button onclick="sendStatus()">发送状态</button>
+            
+            <h3>设备数据</h3>
+            <select id="dataType">
+                <option value="sensor">传感器数据</option>
+                <option value="screenshot">截图</option>
+                <option value="logs">日志</option>
+            </select>
+            <textarea id="dataPayload" rows="3" placeholder="输入JSON数据"></textarea>
+            <button onclick="sendDeviceData()">发送数据</button>
+            
+            <h3>内容响应</h3>
+            <input type="text" id="contentId" placeholder="内容ID">
+            <select id="contentStatus">
+                <option value="playing">播放中</option>
+                <option value="completed">已完成</option>
+                <option value="error">错误</option>
+            </select>
+            <button onclick="sendContentResponse()">发送响应</button>
+        </div>
+        
+        <div class="container">
+            <h2>消息日志</h2>
+            <button onclick="clearLog()">清空日志</button>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+        let client = null;
+        let clientId = 'android_terminal_' + Math.random().toString(16).substr(2, 8);
+        document.getElementById('clientId').value = clientId;
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            if (connected) {
+                statusDiv.textContent = '已连接到MQTT服务器';
+                statusDiv.className = 'status connected';
+            } else {
+                statusDiv.textContent = '未连接';
+                statusDiv.className = 'status disconnected';
+            }
+        }
+
+        function connect() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            clientId = document.getElementById('clientId').value;
+            
+            log(`尝试连接到 ${serverUrl}，客户端ID: ${clientId}`);
+            
+            // 注意: MQTT.js 在浏览器中需要 WebSocket 支持
+            // 您需要配置 MQTT broker 的 WebSocket 端口
+            log('警告: 浏览器MQTT需要WebSocket支持，请配置MQTT broker的WebSocket端口');
+            log('建议使用 mosquitto_pub/sub 命令行工具或 MQTT.fx 客户端进行真实测试');
+            
+            try {
+                client = mqtt.connect(serverUrl, {
+                    clientId: clientId,
+                    clean: true,
+                    connectTimeout: 4000,
+                    reconnectPeriod: 1000,
+                });
+
+                client.on('connect', () => {
+                    log('✅ 连接成功!');
+                    updateStatus(true);
+                    
+                    // 订阅相关主题
+                    const topics = [
+                        `device/${clientId}/register`,
+                        `device/${clientId}/commands`,
+                        `device/${clientId}/content`,
+                        `device/${clientId}/heartbeat`,
+                        `broadcast/all`
+                    ];
+                    
+                    topics.forEach(topic => {
+                        client.subscribe(topic, (err) => {
+                            if (!err) {
+                                log(`📢 订阅主题: ${topic}`);
+                            }
+                        });
+                    });
+                });
+
+                client.on('message', (topic, message) => {
+                    const messageStr = message.toString();
+                    log(`📨 收到消息 [${topic}]: ${messageStr}`);
+                    
+                    try {
+                        const data = JSON.parse(messageStr);
+                        if (data.type === 'register_response') {
+                            log('✅ 设备注册成功!');
+                        } else if (data.type === 'content_push') {
+                            log('📺 收到内容推送');
+                        } else if (data.type === 'command') {
+                            log(`🎮 收到命令: ${data.data.command}`);
+                        }
+                    } catch (e) {
+                        // 消息不是JSON格式
+                    }
+                });
+
+                client.on('error', (error) => {
+                    log(`❌ 连接错误: ${error}`);
+                    updateStatus(false);
+                });
+
+                client.on('offline', () => {
+                    log('📴 连接断开');
+                    updateStatus(false);
+                });
+
+            } catch (error) {
+                log(`❌ 连接失败: ${error}`);
+            }
+        }
+
+        function disconnect() {
+            if (client) {
+                client.end();
+                client = null;
+                updateStatus(false);
+                log('🔌 主动断开连接');
+            }
+        }
+
+        function sendMessage(topic, message) {
+            if (!client || !client.connected) {
+                log('❌ 未连接到MQTT服务器');
+                return;
+            }
+            
+            const messageStr = JSON.stringify(message);
+            client.publish(topic, messageStr, (err) => {
+                if (err) {
+                    log(`❌ 发送失败: ${err}`);
+                } else {
+                    log(`📤 发送消息到 ${topic}: ${messageStr}`);
+                }
+            });
+        }
+
+        function registerDevice() {
+            const message = {
+                type: 'register',
+                deviceId: document.getElementById('deviceId').value,
+                clientId: clientId,
+                timestamp: Date.now(),
+                data: {
+                    deviceId: document.getElementById('deviceId').value,
+                    name: document.getElementById('deviceName').value,
+                    type: 'android_screen',
+                    location: {
+                        name: document.getElementById('locationName').value,
+                        address: document.getElementById('locationAddress').value,
+                        coordinates: {
+                            latitude: parseFloat(document.getElementById('latitude').value),
+                            longitude: parseFloat(document.getElementById('longitude').value)
+                        }
+                    },
+                    specifications: {
+                        resolution: document.getElementById('resolution').value,
+                        size: document.getElementById('size').value,
+                        orientation: document.getElementById('orientation').value
+                    },
+                    version: '1.0.0',
+                    capabilities: ['display', 'audio', 'touch']
+                }
+            };
+            
+            sendMessage('device/register', message);
+        }
+
+        function sendHeartbeat() {
+            const message = {
+                type: 'heartbeat',
+                deviceId: document.getElementById('deviceId').value,
+                clientId: clientId,
+                timestamp: Date.now(),
+                data: {
+                    uptime: Date.now(),
+                    memoryUsage: Math.random() * 100,
+                    cpuUsage: Math.random() * 100
+                }
+            };
+            
+            sendMessage('device/heartbeat', message);
+        }
+
+        function sendStatus() {
+            const message = {
+                type: 'status',
+                deviceId: document.getElementById('deviceId').value,
+                clientId: clientId,
+                timestamp: Date.now(),
+                data: {
+                    status: document.getElementById('statusSelect').value,
+                    deviceInfo: {
+                        battery: Math.floor(Math.random() * 100),
+                        temperature: Math.floor(Math.random() * 40) + 20,
+                        brightness: Math.floor(Math.random() * 100)
+                    }
+                }
+            };
+            
+            sendMessage('device/status', message);
+        }
+
+        function sendDeviceData() {
+            let payload;
+            try {
+                payload = JSON.parse(document.getElementById('dataPayload').value || '{}');
+            } catch (e) {
+                payload = { raw: document.getElementById('dataPayload').value };
+            }
+            
+            const message = {
+                type: 'data',
+                deviceId: document.getElementById('deviceId').value,
+                clientId: clientId,
+                timestamp: Date.now(),
+                data: {
+                    dataType: document.getElementById('dataType').value,
+                    payload: payload
+                }
+            };
+            
+            sendMessage('device/data', message);
+        }
+
+        function sendContentResponse() {
+            const message = {
+                type: 'content_response',
+                deviceId: document.getElementById('deviceId').value,
+                clientId: clientId,
+                timestamp: Date.now(),
+                data: {
+                    contentId: document.getElementById('contentId').value,
+                    status: document.getElementById('contentStatus').value,
+                    timestamp: Date.now()
+                }
+            };
+            
+            sendMessage('device/content_response', message);
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        // 页面加载时的提示
+        window.onload = function() {
+            log('🚀 MQTT安卓终端模拟器已加载');
+            log('⚠️  注意: 浏览器需要WebSocket支持才能连接MQTT');
+            log('💡 建议使用mosquitto_pub/sub或MQTT.fx进行真实测试');
+            log('');
+            log('📋 测试命令示例 (mosquitto客户端):');
+            log('# 注册设备:');
+            log('mosquitto_pub -h localhost -p 1884 -t "device/register" -m \'{"type":"register","deviceId":"android_001","clientId":"test_client","timestamp":' + Date.now() + ',"data":{"deviceId":"android_001","name":"测试终端","type":"android_screen","location":{"name":"测试位置","address":"测试地址","coordinates":{"latitude":39.9042,"longitude":116.4074}},"specifications":{"resolution":"1920x1080","size":"55寸","orientation":"horizontal"}}}\'');
+            log('');
+            log('# 发送心跳:');
+            log('mosquitto_pub -h localhost -p 1884 -t "device/heartbeat" -m \'{"type":"heartbeat","deviceId":"android_001","clientId":"test_client","timestamp":' + Date.now() + ',"data":{"uptime":12345}}\'');
+        };
+    </script>
+</body>
+</html>

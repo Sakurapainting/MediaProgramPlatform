@@ -1,14 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import axios from 'axios';
-
-interface User {
-  id: string;
-  username: string;
-  email: string;
-  role: string;
-  avatar?: string;
-}
+import { authAPI, type User } from '../services/api';
 
 interface AuthState {
   user: User | null;
@@ -31,16 +23,10 @@ export const useAuthStore = create<AuthState>()(
       login: async (email: string, password: string) => {
         set({ isLoading: true });
         try {
-          const response = await axios.post('http://localhost:5001/api/auth/login', {
-            email,
-            password,
-          });
+          const response = await authAPI.login({ email, password });
 
-          if (response.data.success) {
-            const { token, user } = response.data.data;
-            
-            // 设置 axios 默认 header
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          if (response.success && response.data) {
+            const { token, user } = response.data;
             
             set({
               user,
@@ -60,9 +46,6 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
-        // 清除 axios header
-        delete axios.defaults.headers.common['Authorization'];
-        
         set({
           user: null,
           token: null,
@@ -85,8 +68,4 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
-// 初始化 axios token
-const state = useAuthStore.getState();
-if (state.token) {
-  axios.defaults.headers.common['Authorization'] = `Bearer ${state.token}`;
-}
+// Token会通过API服务的请求拦截器自动处理

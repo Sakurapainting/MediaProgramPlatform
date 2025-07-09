@@ -7,7 +7,8 @@
 ## 功能特性
 
 - 📺 **终端设备管理** - 支持多种终端设备的接入和管理
-- 📢 **广告投放管理** - 智能广告投放策略和排期管理
+- � **安卓终端集成** - 通过本地MQTT broker与安卓屏幕终端通信
+- �📢 **广告投放管理** - 智能广告投放策略和排期管理
 - 📋 **节目内容管理** - 节目内容的上传、编辑和分发
 - 📊 **数据统计分析** - 投放效果的实时监控和数据分析
 - 🎯 **精准投放** - 基于地理位置、时间、受众的精准投放
@@ -29,13 +30,27 @@ cd MediaProgramPlatform
 # 安装依赖
 npm run install-all
 
-# 启动开发环境
+# 启动开发环境 (包含本地MQTT broker)
 npm run dev
+```
+
+### 🧪 MQTT功能测试
+```bash
+# 快速MQTT连接测试
+node test-mqtt-quick.js
+
+# 本地MQTT端到端测试
+node test-local-mqtt-e2e.js
+
+# 网络配置检查
+network-check.bat  # Windows
+./network-check.sh # Linux/Mac
 ```
 
 ### 🌐 访问地址
 - **前端管理界面**: http://localhost:3000
-- **后端API服务**: http://localhost:5000
+- **后端API服务**: http://localhost:5001
+- **本地MQTT broker**: tcp://localhost:1883
 - **默认账号**: admin@example.com / 123456
 
 详细安装说明请查看 [INSTALLATION.md](./INSTALLATION.md)
@@ -54,6 +69,7 @@ npm run dev
 - Node.js + Express
 - TypeScript
 - MongoDB + Mongoose
+- MQTT (Aedes broker) - 本地MQTT服务器
 - Socket.io
 - JWT认证
 - Multer文件上传
@@ -146,6 +162,8 @@ MIT License
 - ✅ 完整的项目架构设计
 - ✅ 前端React应用框架（基于Ant Design Pro）
 - ✅ 后端Node.js API服务
+- ✅ 本地MQTT broker集成 (Aedes)
+- ✅ 安卓终端MQTT通信协议
 - ✅ 数据库模型设计（用户、设备、内容、投放活动）
 - ✅ 用户认证和权限管理
 - ✅ 智能仪表盘和数据可视化
@@ -166,6 +184,9 @@ MIT License
 - [📖 产品介绍](./docs/PRODUCT.md) - 详细的产品功能和特性说明
 - [🔧 安装指南](./INSTALLATION.md) - 完整的环境搭建和安装步骤
 - [⚡ 快速开始](./QUICKSTART.md) - 快速部署和使用指南
+- [📱 MQTT安卓集成](./MQTT_ANDROID_INTEGRATION.md) - 安卓终端MQTT通信指南
+- [🌐 网络配置](./NETWORK_CONFIG_GUIDE.md) - 本地MQTT服务器网络配置
+- [📲 安卓配置](./ANDROID_NETWORK_SETUP.md) - 安卓设备连接配置
 - [🏗️ 开发指南](./docs/DEVELOPMENT.md) - 开发规范和代码贡献指南
 - [🚀 部署文档](./docs/DEPLOYMENT.md) - 生产环境部署指南
 

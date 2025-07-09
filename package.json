@@ -23,5 +23,9 @@
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "aedes": "^0.51.3",
+    "mqtt": "^5.13.2"
   }
 }
