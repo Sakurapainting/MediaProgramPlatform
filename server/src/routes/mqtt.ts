@@ -45,7 +45,7 @@ router.get('/status', async (req, res) => {
     };
 
     res.json(response);
-  } catch (error) {
+  } catch (error: any) {
     console.error('获取MQTT状态失败:', error);
     res.status(500).json({ error: '获取MQTT状态失败' });
   }
@@ -67,7 +67,7 @@ router.get('/devices', async (req, res) => {
     }));
 
     res.json(devicesWithStatus);
-  } catch (error) {
+  } catch (error: any) {
     console.error('获取安卓设备失败:', error);
     res.status(500).json({ error: '获取设备列表失败' });
   }
@@ -95,7 +95,7 @@ router.get('/devices/:deviceId', async (req, res) => {
     };
 
     res.json(deviceInfo);
-  } catch (error) {
+  } catch (error: any) {
     console.error('获取设备信息失败:', error);
     res.status(500).json({ error: '获取设备信息失败' });
   }
@@ -154,7 +154,7 @@ router.post('/devices/:deviceId/push-content', async (req, res) => {
     } else {
       res.status(400).json({ error: '内容推送失败，设备可能未连接' });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('推送内容失败:', error);
     res.status(500).json({ error: '推送内容失败' });
   }
@@ -197,7 +197,7 @@ router.post('/devices/:deviceId/command', async (req, res) => {
     } else {
       res.status(400).json({ error: '命令发送失败，设备可能未连接' });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('发送命令失败:', error);
     res.status(500).json({ error: '发送命令失败' });
   }
@@ -233,7 +233,7 @@ router.post('/broadcast', async (req, res) => {
       message: '广播发送成功',
       recipients: mqttService.getStats().totalConnectedDevices
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('广播发送失败:', error);
     res.status(500).json({ error: '广播发送失败' });
   }
@@ -313,7 +313,7 @@ router.post('/devices/batch-push', async (req, res) => {
       notFoundDevices: notFoundDeviceIds,
       contentTitle: content.title
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('批量推送失败:', error);
     res.status(500).json({ error: '批量推送失败' });
   }
@@ -340,7 +340,7 @@ router.post('/devices/:deviceId/reboot', async (req, res) => {
     } else {
       res.status(400).json({ error: '重启命令发送失败，设备可能未连接' });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('发送重启命令失败:', error);
     res.status(500).json({ error: '发送重启命令失败' });
   }
@@ -366,7 +366,7 @@ router.post('/devices/:deviceId/screenshot', async (req, res) => {
     } else {
       res.status(400).json({ error: '截图命令发送失败，设备可能未连接' });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('发送截图命令失败:', error);
     res.status(500).json({ error: '发送截图命令失败' });
   }
@@ -411,7 +411,7 @@ router.post('/push', async (req, res) => {
           success: success,
           message: success ? '推送成功' : '推送失败'
         });
-      } catch (error) {
+      } catch (error: any) {
         results.push({
           deviceId: deviceId,
           success: false,
@@ -429,7 +429,7 @@ router.post('/push', async (req, res) => {
       content: pushMessage.content
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('内容推送失败:', error);
     res.status(500).json({ error: '内容推送失败', details: error.message });
   }

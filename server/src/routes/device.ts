@@ -114,7 +114,7 @@ router.put('/:id', requireRole(['admin', 'operator']), async (req, res) => {
 // 删除设备
 router.delete('/:id', requireRole(['admin']), async (req, res) => {
   try {
-    const device = await Device.findByIdAndDelete(req.params.id);
+    const device = await Device.findById(req.params.id);
 
     if (!device) {
       return res.status(404).json({
@@ -122,6 +122,8 @@ router.delete('/:id', requireRole(['admin']), async (req, res) => {
         message: '设备不存在'
       });
     }
+
+    await device.deleteOne(); // 使用deleteOne触发中间件
 
     res.json({
       success: true,

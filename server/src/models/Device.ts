@@ -118,4 +118,20 @@ deviceSchema.index({ type: 1, status: 1 });
 deviceSchema.index({ deviceId: 1 });
 deviceSchema.index({ 'mqtt.clientId': 1 });
 
+// 在删除设备前，从关联的活动中移除该设备
+deviceSchema.pre('deleteOne', { document: true, query: false }, async function(next) {
+  const device = this;
+  try {
+    // @ts-ignore
+    const Campaign = mongoose.model('Campaign');
+    await Campaign.updateMany(
+      { targetDevices: device._id },
+      { $pull: { targetDevices: device._id } }
+    );
+    next();
+  } catch (error: any) { 
+    next(error);
+  }
+});
+
 export const Device = mongoose.model<IDevice>('Device', deviceSchema);

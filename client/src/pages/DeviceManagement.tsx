@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Button, Space, Tag, Badge, message } from 'antd';
+import { Card, Table, Button, Space, Tag, Badge, message, Modal, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { deviceAPI } from '../services/api';
 
@@ -7,43 +7,58 @@ const DeviceManagement: React.FC = () => {
   // 设备数据状态
   const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [selectedDevice, setSelectedDevice] = useState<any>(null);
 
   useEffect(() => {
-    const fetchDevices = async () => {
-      setLoading(true);
-      try {
-        // 调用后端API获取设备列表
-        const res = await deviceAPI.getDevices();
-        // 兼容不同API返回结构，防止res.data为undefined
-        let list: any[] = [];
-        const data = res && res.data ? res.data : [];
-        if (data && typeof data === 'object' && 'devices' in data && Array.isArray((data as any).devices)) {
-          list = (data as any).devices;
-        } else if (Array.isArray(data)) {
-          list = data;
-        } else {
-          list = [];
-        }
-        // 处理数据格式
-        list = list.map((item: any, idx: number) => ({
-          key: item.deviceId || item.id || idx,
-          id: item.deviceId || item.id,
-          name: item.name,
-          type: item.type,
-          location: item.location?.name || item.location || '',
-          status: item.status || (item.connectionStatus === 'connected' ? 'online' : 'offline'),
-          resolution: item.specifications?.resolution || item.resolution || '',
-          lastHeartbeat: item.lastHeartbeat || item.lastSeen || '',
-        }));
-        setDevices(list);
-      } catch (err) {
-        message.error('获取设备列表失败');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchDevices();
   }, []);
+
+  const handleView = (device: any) => {
+    setSelectedDevice(device);
+    setIsModalVisible(true);
+  };
+
+  const fetchDevices = async () => {
+    setLoading(true);
+    try {
+      const res = await deviceAPI.getDevices();
+      let list: any[] = [];
+      const data = res && res.data ? res.data : [];
+      if (data && typeof data === 'object' && 'devices' in data && Array.isArray((data as any).devices)) {
+        list = (data as any).devices;
+      } else if (Array.isArray(data)) {
+        list = data;
+      } else {
+        list = [];
+      }
+      list = list.map((item: any, idx: number) => ({
+        key: item.deviceId || item.id || idx,
+        id: item.deviceId || item.id,
+        name: item.name,
+        type: item.type,
+        location: item.location?.name || item.location || '',
+        status: item.status || (item.connectionStatus === 'connected' ? 'online' : 'offline'),
+        resolution: item.specifications?.resolution || item.resolution || '',
+        lastHeartbeat: item.lastHeartbeat || item.lastSeen || '',
+      }));
+      setDevices(list);
+    } catch (err) {
+      message.error('获取设备列表失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deviceAPI.deleteDevice(id);
+      message.success('设备删除成功');
+      fetchDevices(); // Refresh the list
+    } catch (error) {
+      message.error('设备删除失败');
+    }
+  };
 
   const columns = [
     {
@@ -87,15 +102,40 @@ const DeviceManagement: React.FC = () => {
       title: '最后心跳',
       dataIndex: 'lastHeartbeat',
       key: 'lastHeartbeat',
+      render: (text: string) => {
+        if (!text) return '-';
+        try {
+          const date = new Date(text);
+          return new Intl.DateTimeFormat('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          }).format(date);
+        } catch (e) {
+          return '无效日期';
+        }
+      },
     },
     {
       title: '操作',
       key: 'action',
-      render: () => (
+      render: (_: any, record: any) => (
         <Space size="middle">
-          <Button size="small" icon={<EyeOutlined />}>查看</Button>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => handleView(record)}>查看</Button>
           <Button size="small" icon={<EditOutlined />}>编辑</Button>
-          <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          <Popconfirm
+            title="确定删除此设备吗？"
+            onConfirm={() => handleDelete(record.id)}
+            okText="是"
+            cancelText="否"
+          >
+            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -121,6 +161,36 @@ const DeviceManagement: React.FC = () => {
           showQuickJumper: true,
         }}
       />
+      {selectedDevice && (
+        <Modal
+          title="设备详情"
+          visible={isModalVisible}
+          onOk={() => setIsModalVisible(false)}
+          onCancel={() => setIsModalVisible(false)}
+          footer={[
+            <Button key="back" onClick={() => setIsModalVisible(false)}>
+              关闭
+            </Button>,
+          ]}
+        >
+          <p><strong>设备ID:</strong> {selectedDevice.id}</p>
+          <p><strong>设备名称:</strong> {selectedDevice.name}</p>
+          <p><strong>设备类型:</strong> {selectedDevice.type}</p>
+          <p><strong>位置:</strong> {selectedDevice.location}</p>
+          <p><strong>状态:</strong> {selectedDevice.status === 'online' ? '在线' : '离线'}</p>
+          <p><strong>分辨率:</strong> {selectedDevice.resolution}</p>
+          <p><strong>最后心跳:</strong> {selectedDevice.lastHeartbeat ? new Intl.DateTimeFormat('zh-CN', {
+            timeZone: 'Asia/Shanghai',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+          }).format(new Date(selectedDevice.lastHeartbeat)) : '-'}</p>
+        </Modal>
+      )}
     </Card>
   );
 };
