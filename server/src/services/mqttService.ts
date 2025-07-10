@@ -432,6 +432,7 @@ export default class MQTTService extends EventEmitter {
       // Update device heartbeat in database
       const device = await Device.findOne({ deviceId: deviceId });
       if (device) {
+        console.log(`📱 has existed ${deviceId}`);
         device.lastHeartbeat = new Date();
         if (!device.mqtt) {
           device.mqtt = {
@@ -450,6 +451,7 @@ export default class MQTTService extends EventEmitter {
       // Update in-memory device list
       const connectedDevice = this.connectedDevices.get(client.id);
       if (connectedDevice) {
+        console.log(`📱 Updating connected device: ${connectedDevice.id}`);
         connectedDevice.lastSeen = new Date();
         this.connectedDevices.set(client.id, connectedDevice);
       }

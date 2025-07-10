@@ -58,6 +58,7 @@ router.get('/devices', async (req, res) => {
       type: 'android_screen'
     }).select('deviceId name location status mqtt lastHeartbeat currentContent createdAt');
 
+    console.log(`📱 Found ${devices.length} Android devices`);
     const devicesWithStatus = devices.map(device => ({
       ...device.toObject(),
       connectionStatus: device.mqtt?.isConnected ? 'connected' : 'disconnected',

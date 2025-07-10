@@ -1,41 +1,49 @@
-import React from 'react';
-import { Card, Table, Button, Space, Tag, Badge } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Card, Table, Button, Space, Tag, Badge, message } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { deviceAPI } from '../services/api';
 
 const DeviceManagement: React.FC = () => {
-  // 模拟设备数据
-  const devices = [
-    {
-      key: '1',
-      id: 'DEV001',
-      name: '商场主屏-1F',
-      type: 'LED屏',
-      location: '万达广场1楼大厅',
-      status: 'online',
-      resolution: '1920x1080',
-      lastHeartbeat: '2分钟前'
-    },
-    {
-      key: '2',
-      id: 'DEV002', 
-      name: '户外LED-东门',
-      type: 'LED屏',
-      location: '市中心东门广场',
-      status: 'offline',
-      resolution: '1280x720',
-      lastHeartbeat: '10分钟前'
-    },
-    {
-      key: '3',
-      id: 'DEV003',
-      name: '地铁屏-站台A',
-      type: 'LCD显示器',
-      location: '地铁1号线A站台',
-      status: 'online',
-      resolution: '1920x1080',
-      lastHeartbeat: '1分钟前'
-    }
-  ];
+  // 设备数据状态
+  const [devices, setDevices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchDevices = async () => {
+      setLoading(true);
+      try {
+        // 调用后端API获取设备列表
+        const res = await deviceAPI.getDevices();
+        // 兼容不同API返回结构，防止res.data为undefined
+        let list: any[] = [];
+        const data = res && res.data ? res.data : [];
+        if (data && typeof data === 'object' && 'devices' in data && Array.isArray((data as any).devices)) {
+          list = (data as any).devices;
+        } else if (Array.isArray(data)) {
+          list = data;
+        } else {
+          list = [];
+        }
+        // 处理数据格式
+        list = list.map((item: any, idx: number) => ({
+          key: item.deviceId || item.id || idx,
+          id: item.deviceId || item.id,
+          name: item.name,
+          type: item.type,
+          location: item.location?.name || item.location || '',
+          status: item.status || (item.connectionStatus === 'connected' ? 'online' : 'offline'),
+          resolution: item.specifications?.resolution || item.resolution || '',
+          lastHeartbeat: item.lastHeartbeat || item.lastSeen || '',
+        }));
+        setDevices(list);
+      } catch (err) {
+        message.error('获取设备列表失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDevices();
+  }, []);
 
   const columns = [
     {
@@ -105,6 +113,7 @@ const DeviceManagement: React.FC = () => {
       <Table 
         columns={columns} 
         dataSource={devices} 
+        loading={loading}
         pagination={{
           total: devices.length,
           pageSize: 10,
