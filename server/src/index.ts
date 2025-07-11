@@ -101,6 +101,9 @@ app.use('/api/campaigns', authenticateToken, campaignRoutes);
 app.use('/api/analytics', authenticateToken, analyticsRoutes);
 app.use('/api/mqtt', authenticateToken, mqttRoutes);
 
+// 静态资源服务：视频文件
+app.use('/uploads', express.static(require('path').join(__dirname, '../uploads')));
+
 // 404 处理
 app.use('*', (req, res) => {
   res.status(404).json({

@@ -241,6 +241,27 @@ export const deviceAPI = {
 
 // 内容管理API
 export const contentAPI = {
+  // 上传视频
+  uploadVideo: async (formData: FormData, onProgress?: (percent: number) => void): Promise<ApiResponse<any>> => {
+    const response = await apiClient.post('/content/uploadVideo', formData, {
+      headers: { 
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 300000, // 5分钟超时
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
+    return response.data;
+  },
+  // 获取视频列表
+  getVideos: async (): Promise<ApiResponse<any>> => {
+    const response = await apiClient.get('/content/videos');
+    return response.data;
+  },
   // 获取内容列表
   getContents: async (params?: { page?: number; limit?: number; type?: string }): Promise<ApiResponse<{ contents: Content[]; total: number }>> => {
     const response = await apiClient.get('/content', { params });
