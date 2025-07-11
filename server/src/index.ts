@@ -79,6 +79,9 @@ mqttService.start();
 // 将MQTT服务实例挂载到app上，供路由使用
 app.set('mqttService', mqttService);
 
+// 同时作为全局变量，供其他模块使用
+(global as any).mqttService = mqttService;
+
 // 基础健康检查路由
 app.get('/health', (req, res) => {
   res.json({

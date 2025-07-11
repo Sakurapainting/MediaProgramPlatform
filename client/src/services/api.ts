@@ -267,6 +267,19 @@ export const contentAPI = {
     const response = await apiClient.get('/content', { params });
     return response.data;
   },
+  // 下发内容到安卓终端
+  pushToDevice: async (contentId: string, deviceId: string, clientId?: string): Promise<ApiResponse<any>> => {
+    const response = await apiClient.post(`/content/push/${contentId}`, {
+      deviceId,
+      clientId
+    });
+    return response.data;
+  },
+  // 获取在线设备列表
+  getOnlineDevices: async (): Promise<ApiResponse<any[]>> => {
+    const response = await apiClient.get('/content/devices/online');
+    return response.data;
+  },
 
   // 获取内容详情
   getContent: async (id: string): Promise<ApiResponse<Content>> => {

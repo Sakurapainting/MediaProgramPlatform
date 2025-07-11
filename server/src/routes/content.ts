@@ -166,6 +166,119 @@ router.get('/videos', async (req, res) => {
   }
 });
 
+// 下发视频到安卓终端接口
+router.post('/push/:contentId', async (req, res) => {
+  try {
+    const { contentId } = req.params;
+    const { deviceId, clientId } = req.body;
+
+    // 验证必要参数
+    if (!deviceId) {
+      return res.status(400).json({
+        success: false,
+        message: '设备ID不能为空'
+      });
+    }
+
+    // 查找内容
+    const content = await Content.findById(contentId);
+    if (!content) {
+      return res.status(404).json({
+        success: false,
+        message: '内容不存在'
+      });
+    }
+
+    // 构建推送消息
+    const pushMessage = {
+      type: 'content_push',
+      timestamp: Date.now(),
+      data: {
+        contentId: content._id,
+        title: content.title,
+        description: content.description,
+        type: content.type,
+        fileUrl: `http://localhost:5001${content.fileUrl}`, // 完整的文件URL
+        duration: content.duration || 0,
+        format: content.format,
+        category: content.category,
+        metadata: content.metadata,
+        pushTime: new Date().toISOString()
+      }
+    };
+
+    console.log('准备推送内容到设备:', deviceId);
+    console.log('推送内容:', pushMessage);
+
+    // 通过MQTT推送到设备
+    const mqttService = (global as any).mqttService;
+    if (mqttService) {
+      const topic = `device/${clientId || deviceId}/content`;
+      try {
+        await mqttService.publishToDevice(clientId || deviceId, topic, pushMessage);
+        console.log(`内容推送成功: ${content.title} -> ${deviceId}`);
+        res.json({
+          success: true,
+          message: '内容推送成功',
+          data: {
+            contentId: content._id,
+            deviceId,
+            title: content.title,
+            pushTime: new Date()
+          }
+        });
+      } catch (error) {
+        console.error('MQTT推送失败:', error);
+        res.status(500).json({
+          success: false,
+          message: '推送失败：设备可能未连接'
+        });
+      }
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'MQTT服务未启动'
+      });
+    }
+
+  } catch (err) {
+    console.error('推送内容失败:', err);
+    const error = err as Error;
+    res.status(500).json({
+      success: false,
+      message: '推送失败',
+      error: error.message
+    });
+  }
+});
+
+// 获取所有在线设备列表
+router.get('/devices/online', async (req, res) => {
+  try {
+    const mqttService = (global as any).mqttService;
+    if (mqttService) {
+      const devices = mqttService.getConnectedDevices();
+      res.json({
+        success: true,
+        data: devices
+      });
+    } else {
+      res.json({
+        success: true,
+        data: []
+      });
+    }
+  } catch (err) {
+    console.error('获取在线设备失败:', err);
+    const error = err as Error;
+    res.status(500).json({
+      success: false,
+      message: '获取设备列表失败',
+      error: error.message
+    });
+  }
+});
+
 // 保持原有路由
 router.get('/', (req, res) => {
   res.json({ message: 'Content routes' });

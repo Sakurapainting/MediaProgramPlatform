@@ -1,18 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Button, Upload, Form, Input, List, message, Modal, Progress } from 'antd';
-import { UploadOutlined, PlayCircleOutlined } from '@ant-design/icons';
-import { contentAPI } from '../services/api';
+import { Card, Button, Upload, Form, Input, List, message, Modal, Progress, Select } from 'antd';
+import { UploadOutlined, PlayCircleOutlined, SendOutlined } from '@ant-design/icons';
+import { contentAPI, deviceAPI } from '../services/api';
 import type { UploadFile } from 'antd/es/upload/interface';
+
+const { Option } = Select;
 
 const ContentManagement: React.FC = () => {
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
+  const [pushModalVisible, setPushModalVisible] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pushing, setPushing] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<UploadFile | null>(null);
+  const [selectedContent, setSelectedContent] = useState<any>(null);
+  const [onlineDevices, setOnlineDevices] = useState<any[]>([]);
   const [form] = Form.useForm();
+  const [pushForm] = Form.useForm();
 
   // 获取视频列表
   const fetchVideos = async () => {
@@ -33,6 +40,25 @@ const ContentManagement: React.FC = () => {
 
   useEffect(() => {
     fetchVideos();
+  }, []);
+
+  // 获取在线设备列表
+  const fetchOnlineDevices = async () => {
+    try {
+      const res = await contentAPI.getOnlineDevices();
+      if (res.success) {
+        setOnlineDevices(res.data || []);
+      } else {
+        message.error(res.message || '获取在线设备列表失败');
+      }
+    } catch (err: any) {
+      console.error('获取在线设备列表失败:', err);
+      message.error('获取在线设备列表失败: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  useEffect(() => {
+    fetchOnlineDevices();
   }, []);
 
   // 处理文件选择
@@ -117,6 +143,55 @@ const ContentManagement: React.FC = () => {
     setUploadProgress(0);
   };
 
+  // 打开下发弹窗
+  const handleOpenPush = (content: any) => {
+    setSelectedContent(content);
+    setPushModalVisible(true);
+    fetchOnlineDevices(); // 重新获取最新的在线设备
+  };
+
+  // 关闭下发弹窗
+  const handleClosePush = () => {
+    setPushModalVisible(false);
+    setSelectedContent(null);
+    pushForm.resetFields();
+  };
+
+  // 下发视频到设备
+  const handlePushToDevice = async (values: any) => {
+    if (!selectedContent) {
+      message.error('未选择内容');
+      return;
+    }
+
+    const { deviceId } = values;
+    if (!deviceId) {
+      message.error('请选择目标设备');
+      return;
+    }
+
+    // 查找设备信息获取clientId
+    const device = onlineDevices.find(d => d.id === deviceId);
+    const clientId = device?.clientId || deviceId;
+
+    setPushing(true);
+    try {
+      const res = await contentAPI.pushToDevice(selectedContent._id, deviceId, clientId);
+      
+      if (res.success) {
+        message.success(`视频 "${selectedContent.title}" 已成功下发到设备 ${deviceId}`);
+        handleClosePush();
+      } else {
+        message.error(res.message || '下发失败');
+      }
+    } catch (err: any) {
+      console.error('下发失败:', err);
+      const errorMsg = err.response?.data?.message || err.message || '下发失败';
+      message.error('下发失败: ' + errorMsg);
+    }
+    setPushing(false);
+  };
+
   return (
     <Card title="内容管理" extra={<Button type="primary" onClick={() => setUploadModalVisible(true)}>上传视频</Button>}>
       <List
@@ -126,7 +201,16 @@ const ContentManagement: React.FC = () => {
         renderItem={item => (
           <List.Item
             actions={[
-              <Button icon={<PlayCircleOutlined />} onClick={() => setPreviewUrl(item.fileUrl)} type="link">预览</Button>
+              <Button icon={<PlayCircleOutlined />} onClick={() => setPreviewUrl(item.fileUrl)} type="link">预览</Button>,
+              <Button 
+                icon={<SendOutlined />} 
+                onClick={() => {
+                  handleOpenPush(item);
+                }} 
+                type="link"
+              >
+                下发
+              </Button>
             ]}
           >
             <List.Item.Meta
@@ -210,6 +294,53 @@ const ContentManagement: React.FC = () => {
               <Progress percent={uploadProgress} />
             </Form.Item>
           )}
+        </Form>
+      </Modal>
+
+      <Modal
+        open={pushModalVisible}
+        title={`下发视频：${selectedContent?.title || ''}`}
+        onCancel={handleClosePush}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={pushForm} layout="vertical" onFinish={handlePushToDevice}>
+          <Form.Item>
+            <div style={{ marginBottom: 16 }}>
+              <strong>视频信息：</strong>
+              <div>标题：{selectedContent?.title}</div>
+              <div>格式：{selectedContent?.format}</div>
+              <div>大小：{selectedContent ? (selectedContent.fileSize / 1024 / 1024).toFixed(2) : 0} MB</div>
+            </div>
+          </Form.Item>
+          <Form.Item
+            name="deviceId"
+            label="选择目标设备"
+            rules={[{ required: true, message: '请选择设备' }]}
+          >
+            <Select 
+              placeholder="请选择设备" 
+              loading={onlineDevices.length === 0}
+              notFoundContent={onlineDevices.length === 0 ? "暂无在线设备" : "未找到设备"}
+            >
+              {onlineDevices.map(device => (
+                <Option key={device.id} value={device.id}>
+                  {device.id} - {device.status === 'online' ? '在线' : '离线'}
+                  {device.lastSeen && ` (${new Date(device.lastSeen).toLocaleString()})`}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={pushing}
+              block
+            >
+              下发到设备
+            </Button>
+          </Form.Item>
         </Form>
       </Modal>
     </Card>
