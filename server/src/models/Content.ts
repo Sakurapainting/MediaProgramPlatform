@@ -13,7 +13,7 @@ export interface IContent extends Document {
   tags: string[];
   category: string;
   status: 'draft' | 'approved' | 'rejected' | 'archived';
-  uploadedBy: mongoose.Types.ObjectId;
+  uploadedBy?: mongoose.Types.ObjectId;
   approvedBy?: mongoose.Types.ObjectId;
   approvedAt?: Date;
   metadata: {
@@ -79,8 +79,7 @@ const contentSchema = new Schema<IContent>({
   },
   uploadedBy: {
     type: Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
   },
   approvedBy: {
     type: Schema.Types.ObjectId,

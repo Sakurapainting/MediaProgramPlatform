@@ -124,7 +124,7 @@ router.post('/uploadVideo', (req, res) => {
         tags: tagsArr,
         category: category.trim() || '默认分类', // 如果没有提供分类，使用默认值
         status: 'approved', // 改为approved，让视频立即可用
-        uploadedBy: (req as any).user.id,
+        uploadedBy: (req as any).user?.id || null, // 修改为可选，兼容无认证情况
         metadata: {
           originalName: req.file.originalname,
           mimeType: req.file.mimetype,
@@ -198,7 +198,7 @@ router.post('/push/:contentId', async (req, res) => {
         title: content.title,
         description: content.description,
         type: content.type,
-        fileUrl: `http://localhost:5001${content.fileUrl}`, // 完整的文件URL
+        fileUrl: `http://192.168.13.217:5001${encodeURI(content.fileUrl)}`, // 使用网络IP并编码URL
         duration: content.duration || 0,
         format: content.format,
         category: content.category,
